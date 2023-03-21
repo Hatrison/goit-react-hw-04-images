@@ -1,5 +1,6 @@
 import { fetchImages } from 'fetchImages';
-import { Component } from 'react';
+import usePrevious from 'hooks/usePrevious';
+import { useState, useEffect, useRef } from 'react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { Container } from './App.styled';
@@ -8,81 +9,79 @@ import ImageGallery from './ImageGallery';
 import Loader from './Loader';
 import SearchBar from './SearchBar';
 
-export class App extends Component {
-  state = {
-    searchText: '',
-    totalPages: 0,
-    page: 1,
-    images: [],
-    error: null,
-    status: 'idle',
-  };
+export const App = () => {
+  const [searchText, setSearchText] = useState('');
+  const [totalPages, setTotalPages] = useState(0);
+  const [page, setPage] = useState(1);
+  const [images, setImages] = useState([]);
+  const [error, setError] = useState(null);
+  const [status, setStatus] = useState('idle');
+  const prevSearchText = usePrevious(searchText);
+  const isFirstRender = useRef(true);
 
-  async componentDidUpdate(_, prevState) {
-    if (
-      prevState.searchText !== this.state.searchText ||
-      prevState.page !== this.state.page
-    ) {
-      this.setState({ status: 'pending' });
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    } else {
+      setStatus('pending');
 
-      await fetchImages(this.state.searchText, this.state.page)
-        .then(({ totalHits, hits: images }) => {
-          if (prevState.searchText !== this.state.searchText) {
-            const totalPages = Math.ceil(totalHits / 12);
-            return this.setState({
-              images,
-              totalPages,
-              status: 'resolved',
-            });
-          }
+      const abortController = new AbortController();
+      const fetchData = async () => {
+        await fetchImages(searchText, page, { signal: abortController.signal })
+          .then(({ totalHits, hits: images }) => {
+            if (prevSearchText !== searchText) {
+              const totalPages = Math.ceil(totalHits / 12);
+              setImages(images);
+              setTotalPages(totalPages);
+              setStatus('resolved');
+              return;
+            }
 
-          this.setState({
-            images: [...prevState.images, ...images],
-            status: 'resolved',
+            setImages(prevImages => [...prevImages, ...images]);
+            setStatus('resolved');
+          })
+          .catch(error => {
+            setError(error.message);
+            setStatus('rejected');
           });
-        })
-        .catch(error => {
-          this.setState({ error: error.message, status: 'rejected' });
-        });
-    }
-  }
+      };
+      fetchData();
 
-  onSubmit = searchText => {
+      return () => {
+        abortController.abort();
+      };
+    }
+  }, [prevSearchText, searchText, page]);
+
+  const onSubmit = searchText => {
     if (!searchText.trim()) {
       toast.error('Incorrect request');
       return;
     }
 
-    this.setState({ searchText, images: [], page: 1 });
+    setSearchText(searchText);
+    setImages([]);
+    setPage(1);
   };
 
-  onLoadMore = event => {
-    this.setState(({ page }) => {
-      return {
-        page: page + 1,
-      };
-    });
+  const onLoadMore = () => {
+    setPage(page + 1);
   };
 
-  render() {
-    const { images, page, totalPages, status, error } = this.state;
+  return (
+    <Container>
+      <SearchBar onSubmit={onSubmit} />
 
-    return (
-      <Container>
-        <SearchBar onSubmit={this.onSubmit} />
+      {status === 'rejected' && <p>{error}</p>}
 
-        {status === 'rejected' && <p>{error}</p>}
+      <ImageGallery images={images} />
 
-        <ImageGallery images={images} />
+      {status === 'pending' && <Loader />}
 
-        {status === 'pending' && <Loader />}
+      {totalPages > 1 && page < totalPages && <Button onClick={onLoadMore} />}
 
-        {totalPages > 1 && page < totalPages && (
-          <Button onClick={this.onLoadMore} />
-        )}
-
-        <ToastContainer />
-      </Container>
-    );
-  }
-}
+      <ToastContainer />
+    </Container>
+  );
+};
