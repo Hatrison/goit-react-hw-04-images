@@ -1,5 +1,4 @@
 import { fetchImages } from 'fetchImages';
-import usePrevious from 'hooks/usePrevious';
 import { useState, useEffect, useRef } from 'react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -16,7 +15,7 @@ export const App = () => {
   const [images, setImages] = useState([]);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState('idle');
-  const prevSearchText = usePrevious(searchText);
+  const prevSearchText = useRef(searchText);
   const isFirstRender = useRef(true);
 
   useEffect(() => {
@@ -30,11 +29,12 @@ export const App = () => {
       const fetchData = async () => {
         await fetchImages(searchText, page, { signal: abortController.signal })
           .then(({ totalHits, hits: images }) => {
-            if (prevSearchText !== searchText) {
+            if (prevSearchText.current !== searchText) {
               const totalPages = Math.ceil(totalHits / 12);
               setImages(images);
               setTotalPages(totalPages);
               setStatus('resolved');
+              prevSearchText.current = searchText;
               return;
             }
 
@@ -57,6 +57,11 @@ export const App = () => {
   const onSubmit = searchText => {
     if (!searchText.trim()) {
       toast.error('Incorrect request');
+      return;
+    }
+
+    if (searchText === prevSearchText.current) {
+      toast.error('Same request. Please, enter another one');
       return;
     }
 
